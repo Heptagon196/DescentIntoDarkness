@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Battle {
     public class CameraControl : MonoBehaviour {
         public float speed = 0.1f;
-        public float edge = 0.1f;
+        public float edge = 0.02f;
         private Camera _camera;
         private static float scale;
         private float screenWidthInWorld;

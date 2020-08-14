@@ -1,21 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using JetBrains.Annotations;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Random = System.Random;
 
 namespace Battle {
+    [Serializable]
+    public enum TerrainType {
+        Plain, Forest, Water, Desert, Swamp, Mountain, None
+    }
     [Serializable] public class SpriteGroup {
         public string name;
+        public string chineseName;
         public int order;
         public float transparency = 1;
         public Sprite icon;
         public Sprite[] sprites;
         public Sprite[] spread;
+        public TerrainType type;
     }
-
     public class MapControl : MonoBehaviour {
         [HideInInspector] public GameObject[,] map = new GameObject[100, 100];
         public static MapControl Instance = null;
@@ -24,6 +28,8 @@ namespace Battle {
         public int height = 30;
         public SpriteGroup[] terrains;
         public SpriteGroup[] embellishments;
+        public GameObject tilesContainer;
+        [HideInInspector] public Dictionary<Tuple<int, int>, List<Tuple<int, int>>> G = new Dictionary<Tuple<int, int>, List<Tuple<int, int>>>();
         private readonly Dictionary<string, int> _terrainId = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _embellishmentId = new Dictionary<string, int>();
         private Random rand = new Random(114514);
@@ -42,9 +48,25 @@ namespace Battle {
             for (int i = 0; i < embellishments.Length; i++) {
                 _embellishmentId[embellishments[i].name] = i;
             }
+            GenerateGraph();
             LoadMap("1.map");
         }
-        private static Vector2 GetTilePositionOnScreen(int x, int y) {
+        private void GenerateGraph() {
+            for (int row = 0; row < height; row++) {
+                for (int column = 0; column < width; column++) {
+                    var p = new List<Tuple<int, int>>();
+                    for (int i = 0; i < 6; i++) {
+                        int px = column + dx[column % 2, i];
+                        int py = row + dy[column % 2, i];
+                        if (px >= 0 && px < width && py >= 0 && py < height) {
+                            p.Add(new Tuple<int, int>(py, px));
+                        }
+                    }
+                    G[new Tuple<int, int>(row, column)] = p;
+                }
+            }
+        }
+        public static Vector2 GetTilePositionOnScreen(int x, int y) {
             return new Vector2(x * 0.54f, y * 0.72f + (x % 2 == 0 ? 0 : 0.36f));
         }
         public Sprite GetRandomSprite(Sprite[] s) {
@@ -76,6 +98,7 @@ namespace Battle {
                 for (int column = 0; column < p.Length; column++) {
                     if (map[row, column] == null) {
                         map[row, column] = Instantiate(tileObj, GetTilePositionOnScreen(column, row), Quaternion.identity);
+                        map[row, column].transform.SetParent(tilesContainer.transform);
                         map[row, column].name += row + "-" + column;
                         map[row, column].GetComponent<TileAttributes>().x = column;
                         map[row, column].GetComponent<TileAttributes>().y = row;

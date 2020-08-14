@@ -14,7 +14,7 @@ namespace Battle {
         public GameObject button;
         private Camera _camera;
         private void Start() {
-            if (!BattleControl.IsEditorMode) {
+            if (!BattleControl.Instance.isEditorMode) {
                 return;
             }
             _camera = Camera.main;
