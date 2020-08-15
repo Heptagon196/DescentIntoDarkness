@@ -37,7 +37,7 @@ namespace Battle {
             return "无";
         }
         public string GetDescription() {
-            return "地形\n" + MapControl.Instance.terrains[terrain].chineseName + "/" + MapControl.Instance.embellishments[embellishment].chineseName + "\n" + ToChinese(GetTerrainType());
+            return MapControl.Instance.terrains[terrain].chineseName + "/" + MapControl.Instance.embellishments[embellishment].chineseName + "\n" + ToChinese(GetTerrainType());
         }
         private int _frameCount = 0;
         public void OnMouseEnter() {

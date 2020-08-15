@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using MainMenu;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Image = UnityEngine.UI.Image;
 
 namespace Battle {
     [Serializable] public enum UnitSkillRange {
@@ -33,6 +35,7 @@ namespace Battle {
     [Serializable] public class AnimationSprites {
         public string name;
         public float speed;
+        public bool loop;
         public Sprite[] sprites;
     }
     [Serializable] public class UnitType {
@@ -46,12 +49,16 @@ namespace Battle {
         [HideInInspector] public Dictionary<string, AnimationSprites> sprites = new Dictionary<string, AnimationSprites>();
     }
     public class BattleControl : MonoBehaviour {
-        public bool isEditorMode = false;
         public static BattleControl Instance = null;
         public UnitType[] unitTypeList;
         [HideInInspector] public Dictionary<string, UnitType> unitType = new Dictionary<string, UnitType>();
         public List<Unit> player;
         public List<Unit> enemy;
+        public Image timeSchedule;
+        public Image worldColor;
+        public Sprite[] timePoints;
+        public Color[] timePointsColor;
+        public int timeCount = 0;
         [HideInInspector] public bool isSelectingTarget = false;
         private void InitSprites() {
             foreach (var i in unitTypeList) {
@@ -61,6 +68,32 @@ namespace Battle {
                 }
             }
         }
+        public string GetChinese(UnitAttribute attr) {
+            if (attr == UnitAttribute.Chaos) {
+                return "混沌";
+            } else if (attr == UnitAttribute.Neutral) {
+                return "中立";
+            } else if (attr == UnitAttribute.Order) {
+                return "秩序";
+            }
+            return "无";
+        }
+        public string GetChinese(UnitSkillRange range) {
+            if (range == UnitSkillRange.CloseCombat) {
+                return "近战";
+            } else if (range == UnitSkillRange.RangedAttack) {
+                return "远程";
+            }
+            return "无";
+        }
+        public string GetChinese(UnitSkillType type) {
+            if (type == UnitSkillType.Magical) {
+                return "魔法";
+            } else if (type == UnitSkillType.Physical) {
+                return "物理";
+            }
+            return "无";
+        }
         private void Awake() {
             if (Instance == null) {
                 Instance = this;
@@ -69,8 +102,14 @@ namespace Battle {
                 return;
             }
             InitSprites();
-            if (!isEditorMode) {
+            var canvas = GameObject.Find("Canvas");
+            if (!EditorModeSwitch.IsEditorMode) {
+                canvas.transform.GetChild(2).gameObject.SetActive(true);
+                canvas.transform.GetChild(1).gameObject.SetActive(false);
                 StartCoroutine(MainGame());
+            } else {
+                canvas.transform.GetChild(2).gameObject.SetActive(false);
+                canvas.transform.GetChild(1).gameObject.SetActive(true);
             }
         }
         private Dictionary<Tuple<int, int>, int> vis;
@@ -116,12 +155,102 @@ namespace Battle {
                 Search(i, d - GetStep(i, s), s);
             }
         }
+        public void PauseGame() {
+            CameraControl.GamePaused = true;
+        }
+        public void ContinueGame() {
+            CameraControl.GamePaused = false;
+        }
+        private IEnumerator StartBattle(Unit p, Unit e) {
+            PauseGame();
+            BattlePanelControl.Instance.AddLeftMessage(p);
+            BattlePanelControl.Instance.AddRightMessage(e);
+            int choice = -1;
+            BattlePanelControl.Instance.SetFirstListener(() => { choice = 0; });
+            BattlePanelControl.Instance.SetSecondListener(() => { choice = 1; });
+            BattlePanelControl.Instance.SetThirdListener(() => { choice = 2; });
+            BattlePanelControl.Instance.ShowPanel();
+            while (choice == -1) {
+                yield return null;
+            }
+            BattlePanelControl.Instance.HidePanel();
+            if (choice == 0 || choice == 1) {
+                Unit.Description.text = "";
+                p.remainAttacks = 0;
+                UnitSkill pskill = null, eskill = null;
+                int pleft = 0, eleft = 0;
+                if (unitType[p.branch].skills.Length > choice) {
+                    pskill = unitType[p.branch].skills[choice];
+                    pleft = pskill.attacksPerTurn;
+                }
+                if (unitType[e.branch].skills.Length > choice) {
+                    eskill = unitType[e.branch].skills[choice];
+                    eleft = eskill.attacksPerTurn;
+                }
+                while (pleft != 0 || eleft != 0) {
+                    if (pleft != 0) {
+                        pleft--;
+                        if (pskill != null) {
+                            p.currentAnimation = pskill.name;
+                            e.currentAnimation = "defend";
+                            yield return new WaitForSeconds(0.5f);
+                            e.health -= pskill.damagePerHit;
+                        }
+                        if (e.health <= 0) {
+                            e.currentAnimation = "die";
+                            yield return new WaitForSeconds(2f);
+                            break;
+                        }
+                        if (p.health <= 0) {
+                            p.currentAnimation = "die";
+                            yield return new WaitForSeconds(2f);
+                            break;
+                        }
+                    }
+                    if (eleft != 0) {
+                        eleft--;
+                        if (eskill != null) {
+                            e.currentAnimation = eskill.name;
+                            p.currentAnimation = "defend";
+                            yield return new WaitForSeconds(0.5f);
+                            p.health -= eskill.damagePerHit;
+                        }
+                        if (e.health <= 0) {
+                            e.currentAnimation = "die";
+                            yield return new WaitForSeconds(2f);
+                            break;
+                        }
+                        if (p.health <= 0) {
+                            p.currentAnimation = "die";
+                            yield return new WaitForSeconds(2f);
+                            break;
+                        }
+                    }
+                    yield return null;
+                }
+                if (p.health > 0) {
+                    p.currentAnimation = "idle";
+                } else {
+                    Destroy(p.gameObject);
+                }
+                if (e.health > 0) {
+                    e.currentAnimation = "idle";
+                } else {
+                    Destroy(e.gameObject);
+                }
+            }
+            ContinueGame();
+            yield return null;
+        }
         private bool skip = false;
         private IEnumerator MainGame() {
             while (this != null) {
                 // player's turn
                 foreach (var i in player) {
-                    i.remainSteps = unitType[i.branch].speed.stepCount;
+                    if (i != null) {
+                        i.remainSteps = unitType[i.branch].speed.stepCount;
+                        i.remainAttacks = 1;
+                    }
                 }
                 while (!skip) {
                     while (!skip && !(Input.GetMouseButtonDown((int) MouseButton.LeftMouse) && CameraControl.IsInClickRange(Input.mousePosition))) {
@@ -167,6 +296,17 @@ namespace Battle {
                     if (x.Length != 1) {
                         MapControl.Instance.tilesContainer.BroadcastMessage("TurnOffGray", SendMessageOptions.DontRequireReceiver);
                         isSelectingTarget = false;
+                        var e = (x[0].transform.GetComponent<Unit>() == null ? x[1] : x[0]).transform.GetComponent<Unit>();
+                        bool adjacent = false;
+                        foreach (var i in MapControl.Instance.G[p.transform.GetComponent<Unit>().pos]) {
+                            if (Equals(i, e.pos)) {
+                                adjacent = true;
+                                break;
+                            }
+                        }
+                        if (adjacent && p.transform.GetComponent<Unit>().remainAttacks == 1) {
+                            yield return StartBattle(p.transform.GetComponent<Unit>(), e);
+                        }
                         yield return null;
                         continue;
                     }
@@ -186,6 +326,10 @@ namespace Battle {
                 skip = false;
                 yield return null;
                 // TODO: Enemy's turn
+                timeCount = (timeCount + 1) % timePoints.Length;
+                timeSchedule.sprite = timePoints[timeCount];
+                worldColor.color = timePointsColor[timeCount];
+                yield return null;
             }
         }
         public void SkipPlayerTurn() {

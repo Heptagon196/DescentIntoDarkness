@@ -5,11 +5,15 @@ namespace Battle {
     public class CameraControl : MonoBehaviour {
         public float speed = 0.1f;
         public float edge = 0.02f;
+        public static bool GamePaused = false;
         private Camera _camera;
         private static float scale;
         private float screenWidthInWorld;
         private float screenHeightInWorld;
         public static bool IsInClickRange(Vector3 pos) {
+            if (GamePaused) {
+                return false;
+            }
             return pos.x >= 0 && pos.x <= (Screen.width - 300) && pos.y >= 0 && pos.y <= (Screen.height - 50);
         }
         private void Awake() {
@@ -22,6 +26,9 @@ namespace Battle {
             return Mathf.Max(Mathf.Min(f, r - w / 2f), l + w / 2f);
         }
         private void FixedUpdate() {
+            if (GamePaused) {
+                return;
+            }
             var pos = Input.mousePosition;
             var campos = _camera.transform.position;
             Vector2 s = new Vector2(0, 0);

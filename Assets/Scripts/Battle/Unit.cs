@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using MainMenu;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
@@ -13,18 +14,21 @@ namespace Battle {
         public int x, y;
         public Tuple<int, int> pos = new Tuple<int, int>(0, 0);
         public int remainSteps;
+        [HideInInspector] public int remainAttacks = 1;
         public bool controlledByPlayer = true;
         public static Text Description = null;
         private string _lastAnimation;
         private SpriteRenderer _spriteRenderer;
         private int _spriteIndex = 0;
         private UnitType _type;
+        private GameObject _healthBar;
         private void Awake() {
             pos = new Tuple<int, int>(y, x);
             transform.position = MapControl.GetTilePositionOnScreen(x, y);
+            _healthBar = transform.GetChild(0).gameObject;
         }
         private void Start() {
-            if (Description == null) {
+            if (!EditorModeSwitch.IsEditorMode && Description == null) {
                 Description = GameObject.Find("UnitDescription").GetComponent<Text>();
             }
             _spriteRenderer = GetComponent<SpriteRenderer>();
@@ -45,8 +49,14 @@ namespace Battle {
                 var animationSprites = _type.sprites[currentAnimation];
                 if (currentAnimation != _lastAnimation) {
                     _spriteIndex = 0;
+                    _lastAnimation = currentAnimation;
+                } else if (_spriteIndex == 0 && !animationSprites.loop) {
+                    if (currentAnimation != "die") {
+                        currentAnimation = "idle";
+                    }
+                    yield return null;
+                    continue;
                 }
-                _lastAnimation = currentAnimation;
                 _spriteRenderer.sprite = animationSprites.sprites[_spriteIndex];
                 _spriteIndex = (_spriteIndex + 1) % animationSprites.sprites.Length;
                 yield return new WaitForSeconds(animationSprites.speed);
@@ -77,32 +87,6 @@ namespace Battle {
             }
             transform.position = dest;
         }
-        private string GetChinese(UnitAttribute attr) {
-            if (attr == UnitAttribute.Chaos) {
-                return "混沌";
-            } else if (attr == UnitAttribute.Neutral) {
-                return "中立";
-            } else if (attr == UnitAttribute.Order) {
-                return "秩序";
-            }
-            return "无";
-        }
-        private string GetChinese(UnitSkillRange range) {
-            if (range == UnitSkillRange.CloseCombat) {
-                return "近战";
-            } else if (range == UnitSkillRange.RangedAttack) {
-                return "远程";
-            }
-            return "无";
-        }
-        private string GetChinese(UnitSkillType type) {
-            if (type == UnitSkillType.Magical) {
-                return "魔法";
-            } else if (type == UnitSkillType.Physical) {
-                return "物理";
-            }
-            return "无";
-        }
         public string GetDescription() {
             string basic = "";
             if (displayName != branch) {
@@ -110,16 +94,28 @@ namespace Battle {
             } else {
                 basic += displayName + "\n\n";
             }
-            basic += GetChinese(_type.attribute) + " " + _type.raceName + "\n\n" +
+            basic += BattleControl.Instance.GetChinese(_type.attribute) + " " + _type.raceName + "\n\n" +
                      "HP: " + health + " / " + _type.maxHealth;
             if (controlledByPlayer) {
                 basic += "\n\n";
                 foreach (var i in _type.skills) {
-                    basic += i.name + "(" + GetChinese(i.range) + ", " + GetChinese(i.type) + ")" + "\n" + i.damagePerHit + " X " + i.attacksPerTurn + "\n";
+                    basic += i.name + "(" + BattleControl.Instance.GetChinese(i.range) + ", " + BattleControl.Instance.GetChinese(i.type) + ")" + "\n" + i.damagePerHit + " X " + i.attacksPerTurn + "\n";
                 }
                 return basic;
             } else {
                 return basic;
+            }
+        }
+        public void SetHealthBar(float p) {
+            if (p < 0) {
+                p = 0;
+            }
+            _healthBar.transform.localPosition = new Vector3((p - 1f) * 2f / 9f, 0.25f);
+            _healthBar.GetComponent<SpriteRenderer>().size = new Vector2(p * 2, 0.3f);
+        }
+        private void FixedUpdate() {
+            if (!EditorModeSwitch.IsEditorMode) {
+                SetHealthBar((float) health / (float) _type.maxHealth);
             }
         }
     }

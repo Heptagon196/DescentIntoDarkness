@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using MainMenu;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Button = UnityEngine.UI.Button;
@@ -14,7 +15,7 @@ namespace Battle {
         public GameObject button;
         private Camera _camera;
         private void Start() {
-            if (!BattleControl.Instance.isEditorMode) {
+            if (!EditorModeSwitch.IsEditorMode) {
                 return;
             }
             _camera = Camera.main;
