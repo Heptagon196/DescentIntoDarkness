@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using MainMenu;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
 using Image = UnityEngine.UI.Image;
 
@@ -107,6 +109,7 @@ namespace Battle {
                 canvas.transform.GetChild(2).gameObject.SetActive(true);
                 canvas.transform.GetChild(1).gameObject.SetActive(false);
                 StartCoroutine(MainGame());
+                StartCoroutine(RunStory("1.cfg"));
             } else {
                 canvas.transform.GetChild(2).gameObject.SetActive(false);
                 canvas.transform.GetChild(1).gameObject.SetActive(true);
@@ -334,6 +337,138 @@ namespace Battle {
         }
         public void SkipPlayerTurn() {
             skip = true;
+        }
+        string Convert(string s) {
+            string ans = "";
+            for (int i = 0; i < s.Length; i++) {
+                if (i != s.Length - 1 && s[i] == '\\') {
+                    if (s[i + 1] == 'n') {
+                        ans += '\n';
+                    } else if (s[i + 1] == 't') {
+                        ans += '\t';
+                    } else {
+                        ans += s[i + 1];
+                    }
+                    i++;
+                } else {
+                    ans += s[i];
+                }
+            }
+            return ans;
+        }
+        private IEnumerator RunStory(string filename) {
+            var s = new StreamReader(filename);
+            string l;
+            while (!string.IsNullOrEmpty(l = s.ReadLine())) {
+                string[] args = l.Split(' ');
+                if (args[0] == "pause") {
+                    PauseGame();
+                } else if (args[0] == "continue") {
+                    ContinueGame();
+                } else if (args[0] == "story") {
+                    if (args[1] == "start") {
+                        StoryControl.Instance.ShowPanel();
+                    } else if (args[1] == "end") {
+                        StoryControl.Instance.HidePanel();
+                    }
+                } else if (args[0] == "t") {
+                    string msg = "";
+                    for (int i = 1; i < args.Length; i++) {
+                        msg = msg + args[i] + " ";
+                    }
+                    StoryControl.Instance.SetText(Convert(msg));
+                    while (!Input.GetMouseButtonDown((int) MouseButton.LeftMouse)) {
+                        yield return null;
+                    }
+                } else if (args[0] == "pic") {
+                    if (args[1] == "close") {
+                        if (args[2] == "left") {
+                            StoryControl.Instance.ClearLeftImage();
+                        } else if (args[2] == "right") {
+                            StoryControl.Instance.ClearRightImage();
+                        } else if (args[2] == "all") {
+                            StoryControl.Instance.ClearImage();
+                        }
+                    } else {
+                        UnityWebRequest r = UnityWebRequestTexture.GetTexture("file://" + Path.GetFullPath(args[2]));
+                        yield return r.SendWebRequest();
+                        Texture t = DownloadHandlerTexture.GetContent(r);
+                        if (args[1] == "left") {
+                            StoryControl.Instance.SetLeftImage(t);
+                        } else if (args[1] == "right") {
+                            StoryControl.Instance.SetRightImage(t);
+                        }
+                    }
+                } else if (args[0] == "msg") {
+                    string msg = "";
+                    for (int i = 1; i < args.Length; i++) {
+                        msg = msg + args[i] + " ";
+                    }
+                    MessageBox.Instance.ShowMessage(Convert(msg));
+                    while (!Input.GetMouseButtonDown((int) MouseButton.LeftMouse)) {
+                        yield return null;
+                    }
+                    MessageBox.Instance.CloseMessage();
+                } else if (args[0] == "until") {
+                    if (args[1] == "death") {
+                        List<GameObject> obj = new List<GameObject>();
+                        foreach (var i in player) {
+                            for (int j = 2; j < args.Length; j++) {
+                                if (i != null && i.displayName == args[j]) {
+                                    obj.Add(i.gameObject);
+                                }
+                            }
+                        }
+                        foreach (var i in enemy) {
+                            for (int j = 2; j < args.Length; j++) {
+                                if (i != null && i.displayName == args[j]) {
+                                    obj.Add(i.gameObject);
+                                }
+                            }
+                        }
+                        while (true) {
+                            foreach (var i in obj) {
+                                if (i == null) {
+                                    yield return null;
+                                    goto BREAKOUT;
+                                }
+                            }
+                            yield return null;
+                        }
+                        BREAKOUT:;
+                    }
+                } else if (args[0] == "jump") {
+                    if (args.Length >= 3 && args[2] == "death") {
+                        bool jump = true;
+                        foreach (var i in player) {
+                            for (int j = 3; j < args.Length; j++) {
+                                if (i != null && i.displayName == args[j]) {
+                                    jump = false;
+                                }
+                            }
+                        }
+                        foreach (var i in enemy) {
+                            for (int j = 3; j < args.Length; j++) {
+                                if (i != null && i.displayName == args[j]) {
+                                    jump = false;
+                                }
+                            }
+                        }
+                        if (jump) {
+                            int c = Int32.Parse(args[1]);
+                            for (int i = 0; i < c; i++) {
+                                s.ReadLine();
+                            }
+                        }
+                    } else {
+                        int c = Int32.Parse(args[1]);
+                        for (int i = 0; i < c; i++) {
+                            s.ReadLine();
+                        }
+                    }
+                }
+                yield return null;
+            }
         }
     }
 }
