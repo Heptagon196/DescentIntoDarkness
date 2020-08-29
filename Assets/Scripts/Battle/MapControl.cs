@@ -13,6 +13,7 @@ namespace Battle {
     [Serializable] public class SpriteGroup {
         public string name;
         public string chineseName;
+        public bool loop = false;
         public int order;
         public float transparency = 1;
         public Sprite icon;
@@ -103,9 +104,6 @@ namespace Battle {
                         map[row, column].GetComponent<TileAttributes>().x = column;
                         map[row, column].GetComponent<TileAttributes>().y = row;
                     }
-                    if (p[column] == "Water") {
-                        continue;
-                    }
                     var x = p[column].Split('^');
                     if (x.Length == 2) {
                         ModifyTile(map[row, column], x[0], x[1]);
@@ -114,6 +112,9 @@ namespace Battle {
                     }
                 }
                 row++;
+                if (row == height) {
+                    break;
+                }
             }
             s.Close();
             for (int i = 0; i < width; i++) {
@@ -128,11 +129,7 @@ namespace Battle {
             for (int row = 0; row < height; row++) {
                 for (int column = 0; column < width; column++) {
                     var x = map[row, column].GetComponent<TileAttributes>();
-                    if (x.terrain != -1) {
-                        s.Write(terrains[x.terrain].name);
-                    } else {
-                        s.Write("Water");
-                    }
+                    s.Write(terrains[x.terrain].name);
                     if (x.embellishment != -1 && x.embellishment != 0) {
                         s.Write("^" + embellishments[x.embellishment].name);
                     }

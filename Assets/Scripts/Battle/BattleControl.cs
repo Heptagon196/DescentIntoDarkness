@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using MainMenu;
 using UnityEngine;
@@ -61,6 +62,8 @@ namespace Battle {
         public Sprite[] timePoints;
         public Color[] timePointsColor;
         public int timeCount = 0;
+        public GameObject playerUnitTemplate;
+        public GameObject enemyUnitTemplate;
         [HideInInspector] public bool isSelectingTarget = false;
         private void InitSprites() {
             foreach (var i in unitTypeList) {
@@ -116,10 +119,13 @@ namespace Battle {
             }
         }
         private Dictionary<Tuple<int, int>, int> vis;
-        private int GetStep(Tuple<int, int> p, UnitMoveSpeed s) {
+        private int GetStep(Tuple<int, int> p, UnitMoveSpeed s, bool player = true) {
             foreach (var i in MapControl.Instance.G[p]) {
+                if (MapControl.Instance.map[i.Item1, i.Item2] == null) {
+                    continue;
+                }
                 var x = MapControl.Instance.map[i.Item1, i.Item2].GetComponent<TileAttributes>().stayingUnit;
-                if (x != null && x.GetComponent<Unit>().controlledByPlayer == false) {
+                if (x != null && x.GetComponent<Unit>().controlledByPlayer == !player) {
                     // cannot pass a block that is near to an enemy
                     return 114514;
                 }
@@ -140,9 +146,9 @@ namespace Battle {
             }
             return 1;
         }
-        private void Search(Tuple<int, int> p, int d, UnitMoveSpeed s) {
+        private void Search(Tuple<int, int> p, int d, UnitMoveSpeed s, bool player = true) {
             var x = MapControl.Instance.map[p.Item1, p.Item2].GetComponent<TileAttributes>().stayingUnit;
-            if (x != null && x.GetComponent<Unit>().controlledByPlayer == false) {
+            if (x != null && x.GetComponent<Unit>().controlledByPlayer == !player) {
                 return;
             }
             if (!vis.ContainsKey(p)) {
@@ -155,7 +161,7 @@ namespace Battle {
                 return;
             }
             foreach (var i in MapControl.Instance.G[p]) {
-                Search(i, d - GetStep(i, s), s);
+                Search(i, d - GetStep(i, s, player), s);
             }
         }
         public void PauseGame() {
@@ -165,18 +171,23 @@ namespace Battle {
             CameraControl.GamePaused = false;
         }
         private IEnumerator StartBattle(Unit p, Unit e) {
-            PauseGame();
-            BattlePanelControl.Instance.AddLeftMessage(p);
-            BattlePanelControl.Instance.AddRightMessage(e);
             int choice = -1;
-            BattlePanelControl.Instance.SetFirstListener(() => { choice = 0; });
-            BattlePanelControl.Instance.SetSecondListener(() => { choice = 1; });
-            BattlePanelControl.Instance.SetThirdListener(() => { choice = 2; });
-            BattlePanelControl.Instance.ShowPanel();
-            while (choice == -1) {
-                yield return null;
+            if (p.controlledByPlayer) {
+                PauseGame();
+                BattlePanelControl.Instance.AddLeftMessage(p);
+                BattlePanelControl.Instance.AddRightMessage(e);
+                BattlePanelControl.Instance.SetFirstListener(() => { choice = 0; });
+                BattlePanelControl.Instance.SetSecondListener(() => { choice = 1; });
+                BattlePanelControl.Instance.SetThirdListener(() => { choice = 2; });
+                BattlePanelControl.Instance.ShowPanel();
+                while (choice == -1) {
+                    yield return null;
+                }
+                BattlePanelControl.Instance.HidePanel();
+            } else {
+                // for test only
+                choice = 0;
             }
-            BattlePanelControl.Instance.HidePanel();
             if (choice == 0 || choice == 1) {
                 Unit.Description.text = "";
                 p.remainAttacks = 0;
@@ -234,12 +245,20 @@ namespace Battle {
                 if (p.health > 0) {
                     p.currentAnimation = "idle";
                 } else {
-                    Destroy(p.gameObject);
+                    if (e.branch == "僵尸" && p.branch != "僵尸") {
+                        p.ToZombie(e.controlledByPlayer);
+                    } else {
+                        Destroy(p.gameObject);
+                    }
                 }
                 if (e.health > 0) {
                     e.currentAnimation = "idle";
                 } else {
-                    Destroy(e.gameObject);
+                    if (p.branch == "僵尸" && e.branch != "僵尸") {
+                        e.ToZombie(p.controlledByPlayer);
+                    } else {
+                        Destroy(e.gameObject);
+                    }
                 }
             }
             ContinueGame();
@@ -250,7 +269,7 @@ namespace Battle {
             while (this != null) {
                 // player's turn
                 foreach (var i in player) {
-                    if (i != null) {
+                    if (i != null && i.controlledByPlayer) {
                         i.remainSteps = unitType[i.branch].speed.stepCount;
                         i.remainAttacks = 1;
                     }
@@ -307,7 +326,8 @@ namespace Battle {
                                 break;
                             }
                         }
-                        if (adjacent && p.transform.GetComponent<Unit>().remainAttacks == 1) {
+                        if (adjacent && p.transform.GetComponent<Unit>().remainAttacks == 1 && !e.controlledByPlayer) {
+                            p.transform.GetComponent<Unit>().remainSteps = 0;
                             yield return StartBattle(p.transform.GetComponent<Unit>(), e);
                         }
                         yield return null;
@@ -320,7 +340,7 @@ namespace Battle {
                         yield return null;
                         continue;
                     }
-                    yield return p.transform.GetComponent<Unit>().MoveTo(MapControl.GetTilePositionOnScreen(d.transform.GetComponent<TileAttributes>().x, d.transform.GetComponent<TileAttributes>().y), d.transform.gameObject);
+                    yield return p.transform.GetComponent<Unit>().MoveTo(d.transform.gameObject);
                     p.transform.GetComponent<Unit>().remainSteps = vis[p.transform.GetComponent<Unit>().pos];
                     MapControl.Instance.tilesContainer.BroadcastMessage("TurnOffGray", SendMessageOptions.DontRequireReceiver);
                     isSelectingTarget = false;
@@ -329,6 +349,58 @@ namespace Battle {
                 skip = false;
                 yield return null;
                 // TODO: Enemy's turn
+                foreach (var i in enemy) {
+                    if (i != null && !i.controlledByPlayer) {
+                        vis = new Dictionary<Tuple<int, int>, int>();
+                        Search(i.pos, unitType[i.branch].speed.stepCount, unitType[i.branch].speed, false);
+                        var rec = new Dictionary<Tuple<int, int>, int>(vis);
+                        var rec2 = new Dictionary<Tuple<int, int>, int>();
+                        List<Tuple<int, int>> key = new List<Tuple<int, int>>();
+                        foreach (var j in rec.Keys) {
+                            key.Add(j);
+                            rec2[j] = Int32.MaxValue;
+                        }
+                        foreach (var k in key) {
+                            rec[k] = 0;
+                            if (MapControl.Instance.map[k.Item1, k.Item2].GetComponent<TileAttributes>().stayingUnit != null && k != i.pos) {
+                                rec[k] = -114514810;
+                            }
+                        }
+                        foreach (var j in player) {
+                            if (j != null && j.controlledByPlayer) {
+                                foreach (var k in MapControl.Instance.G[j.pos]) {
+                                    if (rec.ContainsKey(k)) {
+                                        rec[k] += 114514;
+                                    }
+                                }
+                                foreach (var k in key) {
+                                    rec2[k] = Math.Min(rec2[k], Math.Abs(k.Item1 - j.pos.Item1) + Math.Abs(k.Item2 - j.pos.Item2));
+                                }
+                            }
+                        }
+                        foreach (var j in key) {
+                            rec[j] -= rec2[j];
+                        }
+                        Tuple<int, int> max = null;
+                        foreach (var j in rec.Keys) {
+                            if (max == null) {
+                                max = j;
+                            }
+                            if (rec[j] > rec[max]) {
+                                max = j;
+                            }
+                        }
+                        yield return i.MoveTo(MapControl.Instance.map[max.Item1, max.Item2]);
+                        foreach (var j in MapControl.Instance.G[i.pos]) {
+                            var p = MapControl.Instance.map[j.Item1, j.Item2].GetComponent<TileAttributes>().stayingUnit;
+                            if (p != null && p.GetComponent<Unit>().controlledByPlayer) {
+                                yield return StartBattle(i, p.GetComponent<Unit>());
+                                goto END_BATTLE;
+                            }
+                        }
+                        END_BATTLE:;
+                    }
+                }
                 timeCount = (timeCount + 1) % timePoints.Length;
                 timeSchedule.sprite = timePoints[timeCount];
                 worldColor.color = timePointsColor[timeCount];
@@ -411,24 +483,24 @@ namespace Battle {
                     MessageBox.Instance.CloseMessage();
                 } else if (args[0] == "until") {
                     if (args[1] == "death") {
-                        List<GameObject> obj = new List<GameObject>();
+                        var obj = new List<Tuple<GameObject, string>>();
                         foreach (var i in player) {
                             for (int j = 2; j < args.Length; j++) {
                                 if (i != null && i.displayName == args[j]) {
-                                    obj.Add(i.gameObject);
+                                    obj.Add(new Tuple<GameObject, string>(i.gameObject, i.branch));
                                 }
                             }
                         }
                         foreach (var i in enemy) {
                             for (int j = 2; j < args.Length; j++) {
                                 if (i != null && i.displayName == args[j]) {
-                                    obj.Add(i.gameObject);
+                                    obj.Add(new Tuple<GameObject, string>(i.gameObject, i.branch));
                                 }
                             }
                         }
                         while (true) {
                             foreach (var i in obj) {
-                                if (i == null) {
+                                if (i.Item1 == null || i.Item1.GetComponent<Unit>().branch != i.Item2) {
                                     yield return null;
                                     goto BREAKOUT;
                                 }
@@ -466,6 +538,13 @@ namespace Battle {
                             s.ReadLine();
                         }
                     }
+                } else if (args[0] == "summon") {
+                    bool controlledByPlayer = args[1] == "player";
+                    int x = Int32.Parse(args[2]);
+                    int y = Int32.Parse(args[3]);
+                    MapControl.Instance.map[y, x].GetComponent<TileAttributes>().SummonUnitHere(controlledByPlayer, args[4], args[5]);
+                } else if (args[0] == "sleep") {
+                    yield return new WaitForSeconds(float.Parse(args[1]));
                 }
                 yield return null;
             }

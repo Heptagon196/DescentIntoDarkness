@@ -26,6 +26,25 @@ namespace Battle {
             pos = new Tuple<int, int>(y, x);
             transform.position = MapControl.GetTilePositionOnScreen(x, y);
             _healthBar = transform.GetChild(0).gameObject;
+            _healthBar.GetComponent<SpriteRenderer>().color = (controlledByPlayer ? Color.red : Color.blue);
+        }
+        public void ToZombie(bool player) {
+            branch = "僵尸";
+            displayName = "僵尸 ";
+            if (controlledByPlayer != player) {
+                if (player) {
+                    BattleControl.Instance.player.Add(this);
+                }
+                else {
+                    BattleControl.Instance.enemy.Add(this);
+                }
+            }
+            controlledByPlayer = player;
+            _healthBar.GetComponent<SpriteRenderer>().color = (controlledByPlayer ? Color.red : Color.blue);
+            _type = BattleControl.Instance.unitType["僵尸"];
+            remainSteps = 0;
+            remainAttacks = 0;
+            health = _type.maxHealth;
         }
         private void Start() {
             if (!EditorModeSwitch.IsEditorMode && Description == null) {
@@ -45,8 +64,15 @@ namespace Battle {
         private IEnumerator SpriteControl() {
             yield return null;
             MapControl.Instance.map[y, x].GetComponent<TileAttributes>().stayingUnit = gameObject;
+            UnitType lastType = null;
             while (this != null) {
                 var animationSprites = _type.sprites[currentAnimation];
+                if (lastType != _type) {
+                    _spriteIndex = 0;
+                    _lastAnimation = currentAnimation = "idle";
+                    _spriteRenderer.sprite = _type.sprites["idle"].sprites[0];
+                }
+                lastType = _type;
                 if (currentAnimation != _lastAnimation) {
                     _spriteIndex = 0;
                     _lastAnimation = currentAnimation;
@@ -74,16 +100,21 @@ namespace Battle {
         private void OnMouseExit() {
             MapControl.Instance.map[pos.Item1, pos.Item2].GetComponent<TileAttributes>().OnMouseExit();
         }
-        public IEnumerator MoveTo(Vector3 dest, GameObject destObj) {
+        public IEnumerator MoveTo(GameObject destObj) {
+            Vector3 dest = MapControl.GetTilePositionOnScreen(destObj.GetComponent<TileAttributes>().x, destObj.GetComponent<TileAttributes>().y);
             MapControl.Instance.map[this.pos.Item1, this.pos.Item2].GetComponent<TileAttributes>().stayingUnit = null;
             this.pos = new Tuple<int, int>(destObj.GetComponent<TileAttributes>().y, destObj.transform.GetComponent<TileAttributes>().x);
-            MapControl.Instance.map[this.pos.Item1, this.pos.Item2].GetComponent<TileAttributes>().stayingUnit = gameObject;
+            var t = MapControl.Instance.map[this.pos.Item1, this.pos.Item2].GetComponent<TileAttributes>();
+            t.stayingUnit = gameObject;
             Vector3 pos = transform.position;
             var dis = Mathf.Sqrt(Mathf.Pow(dest.x - pos.x, 2) + Mathf.Pow(dest.y - pos.y, 2));
             int s = Convert.ToInt32(dis * 12);
             for (int i = 0; i < s; i++) {
                 transform.position = pos + (dest - pos) / s * i;
-                yield return new WaitForSeconds(0.02f);
+                yield return new WaitForSeconds(0.01f);
+            }
+            if (MapControl.Instance.embellishments[t.embellishment].name == "Village") {
+                t.EnableFlag(true);
             }
             transform.position = dest;
         }
